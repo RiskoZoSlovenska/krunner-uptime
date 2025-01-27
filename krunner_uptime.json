@@ -1,0 +1,17 @@
+{
+	"KPlugin": {
+		"Authors": [
+			{
+				"Email": "riskozoslovenska@gmail.com",
+				"Name": "RiskoZoSlovenska"
+			}
+		],
+		"Description": "Displays the current system uptime",
+		"EnabledByDefault": true,
+		"Icon": "clock-symbolic",
+		"License": "MIT",
+		"Name": "System Uptime",
+		"Version": "1.0",
+		"Website": "https://github.com/RiskoZoSlovenska/krunner-uptime"
+	}
+}

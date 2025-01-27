@@ -1,0 +1,110 @@
+name: CI
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: fedora
+            image: fedora:41
+          - name: ubuntu
+            image: ubuntu:24.10
+
+    name: "${{ matrix.os.name }}-build"
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.os.image }}
+
+    steps:
+      # System dependencies
+      - name: Fedora Dependencies
+        if: matrix.os.name == 'fedora'
+        run: |
+          sudo dnf update -y && \
+          sudo dnf install -y tree rpm-build make cmake extra-cmake-modules kf6-krunner-devel kf6-ki18n-devel kf6-kconfig-devel kf6-kcoreaddons-devel
+
+      - name: Ubuntu Dependencies
+        if: matrix.os.name == 'ubuntu'
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt update -y && apt upgrade -y && \
+          apt install -y tree build-essential cmake extra-cmake-modules libkf6i18n-dev libkf6runner-dev libkf6config-dev libkf6coreaddons-dev
+
+      # Compiling
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCI_CPACK_OS=${{ matrix.os.name }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install
+        run: cmake --install build --config Release
+
+      - name: Package
+        run: cpack --config build/CPackConfig.cmake
+
+      - name: Retrieve Variables
+        id: variables
+        run: |
+          . build/cmake-vars.sh
+          echo "pkg-file-name=$CPACK_PACKAGE_FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      # Test installing packages
+      - name: Install Fedora Package
+        if: matrix.os.name == 'fedora'
+        run: sudo dnf install -y "./${{ steps.variables.outputs.pkg-file-name }}.rpm"
+
+      - name: Install Ubuntu Package
+        if: matrix.os.name == 'ubuntu'
+        run: apt install -y "./${{ steps.variables.outputs.pkg-file-name }}.deb"
+
+      # Create archive
+      - name: Create Archive
+        run: tar czf "${{ github.event.repository.name }}.tar.gz" ./README.md ./LICENSE build/bin/* --xform='s,build/bin/,,'
+
+      # Upload artifacts
+      - name: Upload Archive Artifact
+        if: matrix.os.name == 'fedora'  # This needs to run in only one job
+        uses: actions/upload-artifact@v4
+        with:
+          name: Binary tarball
+          path: "*.tar.gz"
+
+      - name: Upload Fedora Artifact
+        if: matrix.os.name == 'fedora'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPM
+          path: "*.rpm"
+
+      - name: Upload Ubuntu Artifact
+        if: matrix.os.name == 'ubuntu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DEB
+          path: "*.deb"
+
+  release:
+    name: Release
+    needs:
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*/*
